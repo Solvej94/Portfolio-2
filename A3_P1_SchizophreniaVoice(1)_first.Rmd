@@ -1,0 +1,463 @@
+---
+title: "Assignment2_Part1_VoiceInSchizophrenia"
+author: "Riccardo Fusaroli"
+date: "July 17, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Assignment 2 - Part 1 - Assessing voice in schizophrenia
+
+Schizophrenia has been associated with "inappropriate" voice, sometimes monotone, sometimes croaky. A few studies indicate that pitch might be an index of schizophrenia. However, an ongoing meta-analysis of the literature (which you will have a go at in the last assignment) indicates that pitch mean and standard deviation are only weak indicators of diagnosis. Can we do better with our new fancy complex skills?
+
+The corpus you are asked to analyse is a set of voice recordings from people with schizophrenia (just after first diagnosis) and 1-1 matched controls (on gender, age, education). Each participant watched 10 videos of triangles moving across the screen and had to describe them (so you have circa 10 recordings per person). I have already extracted the pitch once every 10 milliseconds and you will have to use this data to assess differences in the voice.
+
+N.B. Question to be answered via email to Celine: can you characterize voice in schizophrenia as acoustically different? Report the methods you used to answer this question and the results from the analyses. Add a couple of lines trying to interpret the results (make sense of the difference). E.g. People with schizophrenia tend to have high-pitched voice, and present bigger swings in their prosody than controls. Add a couple of lines describing limitations of the data/analyses if any is relevant.
+
+N.B. There are looots of files to be dealt with. Probably too many for your computer. This is a challenge for you. Some (complementary) possible strategies: You can select a subset of files only (and you have to justify your choice). You can learn how to use the apply() or map() functions. You can coordinate with classmates.
+
+```{r}
+setwd("C:/Users/Bruger/Google Drev/Cognitive Science/Experimental methods 3/assignment 3")
+
+library(pastecs)
+library(tidyverse)
+library(readr)
+library(crqa)
+library(dplyr)
+library(lmerTest)
+library(lme4)
+
+
+```
+
+1. In the course of this assignment you have to first select one datafile and figure out how to:
+
+- Extract "standard" descriptors of pitch: Mean, standard deviation, range
+- Extract less "standard" descriptors of pitch you can think of (e.g. median, iqr, mean absoluted deviation, coefficient of variation)
+- Extract "complex" descriptors: recurrence quantification analysis
+
+```{r}
+
+data_pitch1 <- read_delim("Study1D0S101T3_f0.txt", delim = "\t")
+data_pitch1 <- mutate(data_pitch1,
+                      f0 = as.numeric(f0))
+View(data_pitch1)
+
+# standard descriptors
+stat.desc(data_pitch1$f0)
+# pitch standard descriptors 
+# mean = 1.06
+# sd = 2.88
+# range = 52.04 -> 205.79 (range 153.75)
+data_pitch1 %>% 
+  summarise(mean_pitch = mean(f0),
+            sd_pitch = sd(f0),
+            range_pitch = max(f0) - min(f0))
+
+
+# less standard descriptors
+IQR(data_pitch1$f0)
+mad(data_pitch1$f0)
+# pitch less standard descriptors 
+# median = 1.21
+# iqr = 55.97
+# mean absoluted deviation = 9.93
+# coeficients of variation = 0.271
+data_pitch1 %>% 
+  summarise(median_pitch = median(f0),
+            mean_absolute_deviation = mad(f0),
+            coefficients_of_variation = sd(f0) / mean(f0),
+            inter_quartile_range = IQR(f0))
+
+
+# complex descriptors 
+# recurrence plot
+par = list(lgM =  50, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip") 
+
+ans = optimizeParam(data_pitch1, data_pitch1, par, min.rec= 3.5, max.rec= 4.5)
+ans
+ans$delay
+ans$radius
+ans$emddim
+
+crqa(data_pitch1, data_pitch1, delay=46, embed=4, radius=1.12,normalize=0,rescale=0,mindiagline = 2,minvertline = 2)
+#RR = 4.332117
+#DET = 98.74659
+#NRLINE = 313
+#maxL = 536
+#L = 39.26518
+#ENTR = 3.347436
+#rENTR = 0.8110799
+#LAM = 98.09577
+# TT = 31.3856
+
+
+# 0 = control 
+# 1 = schizo
+```
+
+2. Second you will have to turn the code into a function and loop through all the files (or even better use apply/sapply/lapply)
+- Remember to extract the relevant information from the file names (Participant, Diagnosis, Trial, Study)
+
+```{r}
+library(readr)
+
+# make list of all pitch files
+file_list <- list.files(path = "Pitch", full.names = T)
+
+# empty lists to fill in results from loop
+participant=NULL
+study=NULL
+diagnosis=NULL
+trial=NULL
+
+mean_pitch=NULL
+sd_pitch=NULL
+range_pitch=NULL
+median_pitch=NULL
+mean_absolute_deviation=NULL
+coefficients_of_variation=NULL
+inter_quartile_range=NULL
+
+delay=NULL
+embed=NULL
+radius=NULL
+
+n=1
+
+# loop through file list
+for (i in 1:length(file_list)){
+  
+  print(i)
+  # read in file i
+  file <- read.delim(file_list[i])
+  
+  # exstract file information
+  participant[n] = str_extract(file_list[i],regex("\\d{3}"))
+  study[n] = str_extract(file_list[i], regex("\\d{1}"))
+  D = str_extract(file_list[i], regex("D\\d{1}"))
+  diagnosis[n] = str_extract(D, regex("\\d{1}"))
+  t = str_extract(file_list[i],regex("T\\d{1}"))
+  trial[n] = str_extract(t,regex("\\d{1}"))
+  
+  # take pitch column, call it x and change to numeric
+  x <- file$f0
+  x <- as.numeric(x)
+  
+  # calculate standard and less standard descriptors 
+    mean_pitch[n] = mean(x)
+    sd_pitch[n] = sd(x)
+    range_pitch[n] = max(x) - min(x)
+    median_pitch[n] = median(x)
+    mean_absolute_deviation[n] = mad(x)
+    coefficients_of_variation[n] = sd(x) / mean(x)
+    inter_quartile_range[n] = IQR(x)
+
+    # get parameters for crqa
+par <- list(lgM =  50, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0, mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip") 
+    
+    # optimize parameters 
+A <- try(optimizeParam(x, x, par, min.rec= 3.5, max.rec= 4.5))
+
+  # if parameters are below 2 didgets call NA - else put optimal parameter into lists
+ if(length(A)<2){
+    delay[n]=NA
+    embed[n]=NA
+    radius[n]=NA
+    }
+  else{
+    delay[n]=A$delay[1]
+    embed[n]=A$emddim[1]
+    radius[n]=A$radius[1]
+    }
+
+    # do the same for next file 
+  n=n+1
+}  
+
+# make data frame of the result lists 
+df <- data.frame(participant, study, diagnosis, trial, mean_pitch,sd_pitch,range_pitch,median_pitch,mean_absolute_deviation,coefficients_of_variation,inter_quartile_range, delay, embed, radius)
+
+# save data frame in csv format
+write.csv(df,file="pitch_df.csv")
+
+df
+
+
+```
+
+
+```{r}
+
+
+# take median of all parameters and choose one to continue with
+#d <- median(df$delay, na.rm = T)
+d = 36
+#e <- median(df$embed, na.rm = T)
+e = 5
+#r <- median(df$radius, na.rm = T)    
+r = 15
+
+# make file list of pitch data again
+file_list <- list.files(path = "Pitch", full.names = T)
+
+# make empty lists for results of crqa loop
+  RR = NULL
+  DET = NULL
+  maxL= NULL
+  L = NULL
+  ENTR = NULL
+  LAM = NULL
+  TT = NULL
+n=1
+  
+# loop through files in file list and find crqa measures
+for(i in 1:length(file_list)){
+  
+  # read in file i
+  z <- read.delim(file_list[i])
+  # call pitch column z 
+  z = z$f0
+  
+  # run crqa with the chosen parameters 
+  B <- try(crqa(z, z, delay=d, embed=e, radius=r,normalize=0,rescale=0,mindiagline = 2,minvertline = 2))
+
+  if(length(B)<2){
+    RR[n] = NA
+    DET[n] = NA
+    maxL[n] = NA
+    L[n] = NA
+    ENTR[n] = NA
+    LAM[n] = NA
+    TT[n] = NA
+  }
+  
+  else{
+    RR[n] = B$RR[1]
+    DET[n] = B$DET[1]
+    maxL[n] = B$maxL[1]
+    L[n] = B$L[1]
+    ENTR[n] = B$ENTR[1]
+    LAM[n] = B$LAM[1]
+    TT[n] = B$TT[1]
+    }
+  
+  # run next file 
+  n=n+1  
+}
+
+# create data frame with crqa results 
+df_2 = data.frame(RR,DET,maxL,L,ENTR,LAM,TT)
+
+# bind the two dataframes in one
+final_df <- cbind(df,df_2)
+
+# save new data frame as csv
+write.csv(final_df,file="Final_df.csv")
+
+```
+
+3. Make one model per acoustic feature and test whether you can observe significant difference due to Diagnosis. Tip: Which other fixed factors should you control for (that is, include in the model)? Which random ones?
+- Bonus points: cross-validate the model and report the betas and standard errors from all rounds to get an idea of how robust the estimates are. 
+3a. Is study a significant predictor in these models? What should you infer from this? Does study interact with diagnosis? What should you infer from this?
+```{r}
+# read in final data frame
+final_df <- read.delim("Final_df.csv",sep=",")
+
+# make model for each desciptor predicted by diagnosis
+model_range <- lmer(range_pitch ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_mean <- lmer(mean_pitch ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_sd <- lmer(sd_pitch ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+
+model_median <- lmer(median_pitch ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_mad <- lmer(mean_absolute_deviation ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_cov <- lmer(coefficients_of_variation ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_iqr <- lmer(inter_quartile_range ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+
+model_RR <- lmer(RR ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_DET <- lmer(DET ~ diagnosis + trial + (1+diagnosis|participant),final_df)  
+model_maxL <- lmer(maxL ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_L <- lmer(L ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_ENTR <- lmer(ENTR ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_LAM <- lmer(LAM ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+model_TT <- lmer(TT ~ diagnosis + trial + (1+diagnosis|participant),final_df)
+
+# look at results for each model, and find the parameters which show a significant relationship with diagnosis
+summary(model_range)
+summary(model_mean) #D=**
+summary(model_sd)
+summary(model_median) #D=**
+summary(model_mad) # D=***
+summary(model_cov) # D=***
+summary(model_iqr)
+summary(model_RR) # D=**
+summary(model_DET) 
+summary(model_maxL)
+summary(model_L)
+summary(model_ENTR)
+summary(model_LAM)
+summary(model_TT)
+
+```
+
+```{r}
+
+# cross validation of the chosen models 
+
+# change participant column to factor
+final_df$participant <- as.factor(final_df$participant)
+# divide subjects by unique subject id (one control and one schizo)
+subjects <- unique(final_df$participant)
+# create folds by subjects 
+folds <- createFolds(subjects,k=4)
+
+# cross validation mean
+
+#create matrix with prediction error, intercept and estimate
+mean_df <- matrix(NA,nrow = 4,ncol = 3)
+colnames(mean_df) <- c("error","intercept", "diagnosis")
+
+# loop through folds, cross validation
+  k=4
+  for (i in 1:k) {
+  # divide data in train and test set
+  train_data <- filter(final_df, !(as.numeric(participant) %in% folds[[i]])) 
+  test_data <- filter(final_df, as.numeric(participant) %in% folds[[i]])
+  
+  # take the chosen model and train it on train data
+  model = lmer(mean_pitch ~ diagnosis + trial + (1+diagnosis|participant),train_data, REML = F)
+  
+  # make predictions from model and test data
+  model_prediction <- predict(model, test_data, allow.new.levels=T)
+  
+  # calculate model error
+  model_error <- ModelMetrics::rmse(test_data$mean_pitch, model_prediction)
+  
+  # take error, intercept and estimate
+  fix_ef <- fixef(model)
+  intercept <- fix_ef[[1]] 
+  diagnosis <- fix_ef[[2]]
+  
+  # save results in matrix
+  mean_df[i,] <- c(model_error,intercept,diagnosis)
+  }
+
+mean(mean_df[1])
+
+# cross validation mad
+
+mad_df <- matrix(NA,nrow = 4,ncol = 3)
+colnames(mad_df) <- c("error","intercept", "diagnosis")
+
+  k=4
+  for (i in 1:k) {
+  train_data <- filter(final_df, !(as.numeric(participant) %in% folds[[i]])) 
+  test_data <- filter(final_df, as.numeric(participant) %in% folds[[i]])
+  
+  model = lmer(mean_absolute_deviation ~ diagnosis + trial + (1+diagnosis|participant),train_data, REML = F)
+  
+  model_prediction <- predict(model, test_data, allow.new.levels=T)
+  
+  model_error <- ModelMetrics::rmse(test_data$mean_absolute_deviation, model_prediction)
+  
+  fix_ef <- fixef(model)
+  intercept <- fix_ef[[1]] 
+  diagnosis <- fix_ef[[2]]
+
+  
+  mad_df[i,] <- c(model_error,intercept,diagnosis)
+  }
+  
+# cross validation median
+
+median_df <- matrix(NA,nrow = 4,ncol = 3)
+colnames(median_df) <- c("error","intercept", "diagnosis")
+
+  k=4
+  for (i in 1:k) {
+  train_data <- filter(final_df, !(as.numeric(participant) %in% folds[[i]])) 
+  test_data <- filter(final_df, as.numeric(participant) %in% folds[[i]])
+  
+  model = lmer(median_pitch ~ diagnosis + trial + (1+diagnosis|participant),train_data, REML = F)
+  
+  model_prediction <- predict(model, test_data, allow.new.levels=T)
+  
+  model_error <- ModelMetrics::rmse(test_data$median_pitch, model_prediction)
+  
+  fix_ef <- fixef(model)
+  intercept <- fix_ef[[1]] 
+  diagnosis <- fix_ef[[2]]
+  
+  
+  median_df[i,] <- c(model_error,intercept,diagnosis)
+  }
+
+
+# cross validation cov
+
+cov_df <- matrix(NA,nrow = 4,ncol = 3)
+colnames(cov_df) <- c("error","intercept", "diagnosis")
+
+  k=4
+  for (i in 1:k) {
+  train_data <- filter(final_df, !(as.numeric(participant) %in% folds[[i]])) 
+  test_data <- filter(final_df, as.numeric(participant) %in% folds[[i]])
+  
+  model = lmer(coefficients_of_variation ~ diagnosis + trial + (1+diagnosis|participant),train_data, REML = F)
+  
+  model_prediction <- predict(model, test_data, allow.new.levels=T)
+  
+  model_error <- ModelMetrics::rmse(test_data$coefficients_of_variation, model_prediction)
+  
+  fix_ef <- fixef(model)
+  intercept <- fix_ef[[1]] 
+  diagnosis <- fix_ef[[2]]
+
+  
+  cov_df[i,] <- c(model_error,intercept,diagnosis)
+  }  
+  
+# cross validation RR
+
+RR_df <- matrix(NA,nrow = 4,ncol = 3)
+colnames(RR_df) <- c("error","intercept", "diagnosis")
+
+  k=4
+  for (i in 1:k) {
+  train_data <- filter(final_df, !(as.numeric(participant) %in% folds[[i]])) 
+  test_data <- filter(final_df, as.numeric(participant) %in% folds[[i]])
+  
+  test_data <- na.omit(test_data)
+  
+  model <- lmer(RR ~ diagnosis + trial + (1+diagnosis|participant),train_data)
+  
+  model_prediction <- predict(model, test_data, allow.new.levels=T)
+  
+  model_error <- ModelMetrics::rmse(test_data$RR, model_prediction)
+  
+  fix_ef <- fixef(model)
+  intercept <- fix_ef[[1]] 
+  diagnosis <- fix_ef[[2]]
+  
+  RR_df[i,] <- c(model_error,intercept,diagnosis)
+  }
+
+  # bind matrixes 
+error_df <- rbind(mean_df,median_df,cov_df,mad_df,RR_df)
+rownames(error_df) <- rep(c("mean","median","cov","mad","RR"),each=4)
+
+```
+
+4. Bonus Question: Compare effect size of diagnosis across the different measures. Which measure seems most sensitive?
+- Tip: to compare across measures you need to put all of them on the same scale, that is, you need to "standardize" them (z-score)
+
+5. Bonus question. In the Clinical Info file you have additional information about the participants. Which additional parameters (e.g. age, gender) should we control for? Report the effects.
+
+6. Write a paragraph reporting methods and results
+
+[Next assignment: can we use these measures to build a tool that diagnoses people from voice only?]
+
+## N.B. Remember to save the acoustic features of voice in a separate file, so to be able to load them next time
