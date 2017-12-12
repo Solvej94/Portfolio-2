@@ -1,0 +1,213 @@
+---
+title: "A3_P2_Solvej"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+library(tidyverse)
+library(pastecs)
+library(lme4)
+library(caret)
+library(pROC) 
+library(lmerTest)
+library(readr)
+library(ModelMetrics)
+library(caret)
+```
+
+
+2. Extract features from new pitch files - Looping through files.
+
+```{r}
+
+# set working directory and choose "path" for list of files
+setwd("C:/Users/Bruger/Google Drev/Cognitive Science/Experimental methods 3/assignment 3")
+file_list <- list.files(path = "Pitch", full.names = T)
+
+# making empty lists for all descriptors
+
+# standard
+participant=NULL
+study=NULL
+diagnosis=NULL
+trial=NULL
+
+# less-standard
+mean_pitch=NULL
+sd_pitch=NULL
+range_pitch=NULL
+median_pitch=NULL
+mean_absolute_deviation=NULL
+coefficients_of_variation=NULL
+inter_quartile_range=NULL
+
+# parameters for crqa analysis
+delay=NULL
+embed=NULL
+radius=NULL
+
+# Loop 1: for each file in "file_list"
+n=1
+for (i in 1:length(file_list)){
+  
+  #read in file from file_list
+  file <- read.delim(file_list[i])
+  
+  # extract information from file names and put into lists
+  # participant ID
+  participant[n] = str_extract(file_list[i],regex("\\d{3}"))
+  # study number
+  study[n] = str_extract(file_list[i], regex("\\d{1}"))
+  # diagnosis. Only if diagnosis is known. otherwise remove. --> (0=Control, 1=Schitzophrenia)
+  D = str_extract(file_list[i], regex("D\\d{1}"))
+  diagnosis[n] = str_extract(D, regex("\\d{1}"))
+  # trial number
+  t = str_extract(file_list[i],regex("T\\d{1}"))
+  trial[n] = str_extract(t,regex("\\d{1}"))
+  
+  # take the pitch column, call it x, and make numeric
+  x <- file$f0
+  x <- as.numeric(x)
+  
+  # extract standard and less standard descriptors. Put into lists
+    mean_pitch[n] = mean(x)
+    sd_pitch[n] = sd(x)
+    range_pitch[n] = max(x) - min(x)
+    median_pitch[n] = median(x)
+    mean_absolute_deviation[n] = mad(x)
+    coefficients_of_variation[n] = sd(x) / mean(x)
+    inter_quartile_range[n] = IQR(x)
+
+# parameters
+par <- list(lgM =  50, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0, mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip") 
+
+# parameters: delay, embed, radius
+A <- try(optimizeParam(x, x, par, min.rec= 3.5, max.rec= 4.5))
+
+# if parameters are below 2 (not recurrent enough?) call NA
+ if(length(A)<2){
+    delay[n]=NA
+    embed[n]=NA
+    radius[n]=NA
+ }
+# else print value of parameters in lists 
+  else{
+    delay[n]=A$delay[1]
+    embed[n]=A$emddim[1]
+    radius[n]=A$radius[1]
+    }
+
+  n=n+1
+}  
+
+# make data frame from all lists 
+df_3 <- data.frame(participant, study, diagnosis, trial, mean_pitch,sd_pitch,range_pitch,median_pitch,mean_absolute_deviation,coefficients_of_variation,inter_quartile_range, delay, embed, radius)
+
+
+
+# SECOND PART
+
+
+# calculate median of parameter lists and name the medians. 
+d <- median(df$delay, na.rm = T)
+e <- median(df$embed, na.rm = T)
+r <- median(df$radius, na.rm = T)    
+
+# take list of files again. remember to set "path"
+file_list <- list.files(path = "Pitch", full.names = T)
+
+# make empty lists of rqa measures 
+  RR = NULL
+  DET = NULL
+  maxL= NULL
+  L = NULL
+  ENTR = NULL
+  LAM = NULL
+  TT = NULL
+
+# Loop 2: for each file in file_list
+n=1
+for(i in 1:length(file_list)){
+  
+  # read in file from file_list
+  z <- read.delim(file_list[i])
+  # take pitch column call it z 
+  z = z$f0
+  
+  # run crqa analysis. inset median of parameters (d,e,r)
+  B <- try(crqa(z, z, delay=d, embed=e, radius=r,normalize=0,rescale=0,mindiagline = 2,minvertline = 2))
+  
+  # if the results of crqa are below 2 call NA (the files are in that case not recurrent enough?)
+  if(length(B)<2){
+    RR[n] = NA
+    DET[n] = NA
+    maxL[n] = NA
+    L[n] = NA
+    ENTR[n] = NA
+    LAM[n] = NA
+    TT[n] = NA
+  }
+  
+  # else print values from crqa in lists 
+  else{
+    RR[n] = B$RR[1]
+    DET[n] = B$DET[1]
+    maxL[n] = B$maxL[1]
+    L[n] = B$L[1]
+    ENTR[n] = B$ENTR[1]
+    LAM[n] = B$LAM[1]
+    TT[n] = B$TT[1]
+    }
+  
+
+  n=n+1  
+}
+
+# make data frame of rqa_descriptors
+df_4 = data.frame(RR,DET,maxL,L,ENTR,LAM,TT)
+
+# bind the two descriptor data frames in one. call it final_df 
+final_df <- cbind(df_3,df_4)
+
+# write csv file of the data frame
+write.csv(final_df,file="markdown_df.csv")
+
+```
+
+
+```{r}
+
+# predict the diagnosis from new data
+
+# load diagnostics model 
+load("BestModelForever.rda")
+
+# read csv file from above called final_df. including all descriptors 
+data = read.delim("markdown_df.csv", sep = ",")
+
+# make new column in data frame called prediction. 
+# predict diagnosis from the new data using BestModelForever
+predictions_list <- predict(BestModelForever, newdata=data, allow.new.levels=T,type = "response")
+
+ 
+# if prediction is >0.5 call schizophrenia 
+data$prediction[predictions_list>0.5]="schizophrenia" 
+# if prediction is <=0.5 call control
+data$prediction[predictions_list<=0.5]="control"
+
+# if diagnosis was know in advance:
+# make a confusion matrix over results. compair reference/known diagnosis to predicted diagnosis
+matrix <- caret::confusionMatrix(data = data$prediction, reference = data$diagnosis, positive = "schizophrenia")
+
+# view confusion matrix to get results of model performance
+matrix
+
+# DONE
+```
+
